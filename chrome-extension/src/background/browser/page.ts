@@ -1100,6 +1100,23 @@ export default class Page {
       logger.warning('Puppeteer is not connected');
       return null;
     }
+
+    // Set a timeout for element location to prevent hanging
+    const timeoutPromise = new Promise<null>((_, reject) => {
+      setTimeout(() => reject(new Error('Element location timeout after 10 seconds')), 10000);
+    });
+
+    const locatePromise = this._locateElementInternal(element);
+
+    try {
+      return await Promise.race([locatePromise, timeoutPromise]);
+    } catch (error) {
+      logger.error('Element location failed or timed out:', error);
+      return null;
+    }
+  }
+
+  private async _locateElementInternal(element: DOMElementNode): Promise<ElementHandle | null> {
     let currentFrame: PuppeteerPage | Frame = this._puppeteerPage;
 
     // Start with the target element and collect all parents
@@ -1131,10 +1148,12 @@ export default class Page {
     }
 
     const cssSelector = element.enhancedCssSelectorForElement(this._config.includeDynamicAttributes);
+    logger.info(`Attempting to locate element with CSS selector: ${cssSelector}`);
 
     try {
       // Try CSS selector first
       let elementHandle: ElementHandle | null = await currentFrame.$(cssSelector);
+      logger.info(`CSS selector result: ${elementHandle ? 'found' : 'not found'}`);
 
       // If CSS selector failed, try XPath
       if (!elementHandle) {
@@ -1145,26 +1164,150 @@ export default class Page {
             const fullXpath = xpath.startsWith('/') ? xpath : `/${xpath}`;
             const xpathSelector = `::-p-xpath(${fullXpath})`;
             elementHandle = await currentFrame.$(xpathSelector);
+            logger.info(`XPath selector result: ${elementHandle ? 'found' : 'not found'}`);
           } catch (xpathError) {
             logger.error('Failed to locate element using XPath:', xpathError);
           }
+        } else {
+          logger.warning('No XPath available for element');
         }
       }
 
       // If element found, check visibility and scroll into view
       if (elementHandle) {
         const isHidden = await elementHandle.isHidden();
+        logger.info(`Element visibility: ${isHidden ? 'hidden' : 'visible'}`);
         if (!isHidden) {
           await this._scrollIntoViewIfNeeded(elementHandle);
         }
         return elementHandle;
       }
 
-      logger.info('elementHandle not located');
+      logger.warning(`Element not found with selector: ${cssSelector}`);
+
+      // Try alternative selectors as fallback
+      if (element.attributes?.id) {
+        const idSelector = `#${element.attributes.id}`;
+        logger.info(`Trying fallback ID selector: ${idSelector}`);
+        try {
+          const fallbackElement = await currentFrame.$(idSelector);
+          if (fallbackElement) {
+            logger.info('Element found with ID selector fallback');
+            return fallbackElement;
+          }
+        } catch (fallbackError) {
+          logger.warning('ID selector fallback failed:', fallbackError);
+        }
+      }
+
+      // Try simplified selector without dynamic attributes
+      const simplifiedSelector = element.enhancedCssSelectorForElement(false);
+      if (simplifiedSelector !== cssSelector) {
+        logger.info(`Trying simplified selector: ${simplifiedSelector}`);
+        try {
+          const fallbackElement = await currentFrame.$(simplifiedSelector);
+          if (fallbackElement) {
+            logger.info('Element found with simplified selector fallback');
+            return fallbackElement;
+          }
+        } catch (fallbackError) {
+          logger.warning('Simplified selector fallback failed:', fallbackError);
+        }
+      }
+
+      // Try tag + name attribute for form elements
+      if (
+        element.attributes?.name &&
+        (element.tagName === 'input' || element.tagName === 'textarea' || element.tagName === 'select')
+      ) {
+        const nameSelector = `${element.tagName}[name="${element.attributes.name}"]`;
+        logger.info(`Trying name-based selector: ${nameSelector}`);
+        try {
+          const fallbackElement = await currentFrame.$(nameSelector);
+          if (fallbackElement) {
+            logger.info('Element found with name-based selector fallback');
+            return fallbackElement;
+          }
+        } catch (fallbackError) {
+          logger.warning('Name-based selector fallback failed:', fallbackError);
+        }
+      }
+
+      // Try aria-labelledby for accessibility
+      if (element.attributes?.['aria-labelledby']) {
+        const ariaSelector = `${element.tagName}[aria-labelledby="${element.attributes['aria-labelledby']}"]`;
+        logger.info(`Trying aria-labelledby selector: ${ariaSelector}`);
+        try {
+          const fallbackElement = await currentFrame.$(ariaSelector);
+          if (fallbackElement) {
+            logger.info('Element found with aria-labelledby selector fallback');
+            return fallbackElement;
+          }
+        } catch (fallbackError) {
+          logger.warning('Aria-labelledby selector fallback failed:', fallbackError);
+        }
+      }
+
+      // Try class-based selector as last resort
+      if (element.attributes?.class) {
+        const classSelector = `.${element.attributes.class.split(' ')[0]}`;
+        logger.info(`Trying fallback class selector: ${classSelector}`);
+        try {
+          const fallbackElement = await currentFrame.$(classSelector);
+          if (fallbackElement) {
+            logger.info('Element found with class selector fallback');
+            return fallbackElement;
+          }
+        } catch (fallbackError) {
+          logger.warning('Class selector fallback failed:', fallbackError);
+        }
+      }
+
+      // Try basic tag selector as absolute last resort
+      if (element.tagName) {
+        const basicSelector = element.tagName;
+        logger.info(`Trying basic tag selector: ${basicSelector}`);
+        try {
+          const fallbackElement = await currentFrame.$(basicSelector);
+          if (fallbackElement) {
+            logger.info('Element found with basic tag selector fallback');
+            return fallbackElement;
+          }
+        } catch (fallbackError) {
+          logger.warning('Basic tag selector fallback failed:', fallbackError);
+        }
+      }
     } catch (error) {
       logger.error('Failed to locate element:', error);
     }
 
+    return null;
+  }
+
+  async waitForElementToAppear(elementNode: DOMElementNode, timeoutMs: number = 5000): Promise<ElementHandle | null> {
+    if (!this._puppeteerPage) {
+      return null;
+    }
+
+    const startTime = Date.now();
+    const checkInterval = 500; // Check every 500ms
+
+    while (Date.now() - startTime < timeoutMs) {
+      try {
+        const element = await this.locateElement(elementNode);
+        if (element) {
+          logger.info(`Element appeared after ${Date.now() - startTime}ms`);
+          return element;
+        }
+      } catch (error) {
+        logger.debug(`Element check failed: ${error}`);
+      }
+
+      // Wait before next check
+      await new Promise(resolve => setTimeout(resolve, checkInterval));
+    }
+
+    logger.warning(`Element did not appear within ${timeoutMs}ms`);
     return null;
   }
 
@@ -1179,9 +1322,17 @@ export default class Page {
       //   await this._updateState(useVision, elementNode.highlightIndex);
       // }
 
-      const element = await this.locateElement(elementNode);
+      let element = await this.locateElement(elementNode);
+
+      // If element not found, try waiting for it to appear (useful for dynamic elements)
       if (!element) {
-        throw new Error(`Element: ${elementNode} not found`);
+        logger.info('Element not found immediately, waiting for it to appear...');
+        element = await this.waitForElementToAppear(elementNode, 5000);
+      }
+
+      if (!element) {
+        const elementInfo = `tagName: ${elementNode.tagName}, xpath: ${elementNode.xpath}, selector: ${elementNode.enhancedCssSelectorForElement(this._config.includeDynamicAttributes)}`;
+        throw new Error(`Element not found: ${elementInfo}`);
       }
 
       // Ensure element is ready for input
@@ -1194,6 +1345,18 @@ export default class Page {
         if (!isHidden) {
           await this._scrollIntoViewIfNeeded(element, 1500);
         }
+
+        // Ensure element is in the center of the viewport for better visibility
+        await element.evaluate(el => {
+          el.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center',
+            inline: 'center',
+          });
+        });
+
+        // Wait for scroll to complete
+        await new Promise(resolve => setTimeout(resolve, 500));
       } catch (e) {
         // Continue even if these operations fail
         logger.debug(`Non-critical error preparing element: ${e}`);
@@ -1221,40 +1384,107 @@ export default class Page {
       });
 
       // Choose appropriate input method based on element properties
-      if ((isContentEditable || tagName === 'input') && !isReadOnly && !isDisabled) {
-        // Clear content and set value directly
+      try {
+        // Primary method: Focus + click + type (most reliable for stubborn elements)
+        await element.focus();
+
+        // Add visual feedback before clicking to make it more visible
         await element.evaluate(el => {
-          if (el instanceof HTMLElement) {
-            el.textContent = '';
-          }
-          if ('value' in el) {
-            (el as HTMLInputElement).value = '';
-          }
-          // Dispatch events
-          el.dispatchEvent(new Event('input', { bubbles: true }));
-          el.dispatchEvent(new Event('change', { bubbles: true }));
+          // Add a temporary highlight to show where we're clicking
+          el.style.outline = '2px solid #00d4ff';
+          el.style.outlineOffset = '2px';
+          el.style.transition = 'outline 0.3s ease';
         });
 
-        // Type the text with a small delay between keypresses
+        // Wait a moment for the highlight to be visible
+        await new Promise(resolve => setTimeout(resolve, 300));
+
+        // Make the click more visible and ensure cursor appears
+        await element.click({
+          button: 'left',
+          clickCount: 1,
+          delay: 100, // Small delay to make click more visible
+        });
+
+        // Remove the highlight after clicking
+        await element.evaluate(el => {
+          el.style.outline = '';
+          el.style.outlineOffset = '';
+        });
+
+        // Wait a moment for the cursor to appear
+        await new Promise(resolve => setTimeout(resolve, 200));
+
+        // Ensure cursor is visible by checking if element is focused
+        const isFocused = await element.evaluate(el => el === document.activeElement);
+        if (!isFocused) {
+          logger.warning('Element not focused after click, trying to focus again');
+          await element.focus();
+        }
+
         await element.type(text, { delay: 50 });
-      } else {
-        // Use direct value setting for other types of elements
-        await element.evaluate((el, value) => {
-          if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
-            el.value = value;
-          } else if (el instanceof HTMLElement && el.isContentEditable) {
-            el.textContent = value;
+        logger.info('Primary input method (focus + click + type) succeeded');
+      } catch (inputError) {
+        logger.warning('Primary input method failed, trying alternative approach:', inputError);
+
+        // Alternative method: Direct value setting with events
+        try {
+          if ((isContentEditable || tagName === 'input') && !isReadOnly && !isDisabled) {
+            // Clear content and set value directly
+            await element.evaluate(el => {
+              if (el instanceof HTMLElement) {
+                el.textContent = '';
+              }
+              if ('value' in el) {
+                (el as HTMLInputElement).value = '';
+              }
+              // Dispatch events
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+
+            // Type the text with a small delay between keypresses
+            await element.type(text, { delay: 50 });
+          } else {
+            // Use direct value setting for other types of elements
+            await element.evaluate((el, value) => {
+              if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+                el.value = value;
+              } else if (el instanceof HTMLElement && el.isContentEditable) {
+                el.textContent = value;
+              }
+              // Dispatch events
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+            }, text);
           }
-          // Dispatch events
-          el.dispatchEvent(new Event('input', { bubbles: true }));
-          el.dispatchEvent(new Event('change', { bubbles: true }));
-        }, text);
+          logger.info('Alternative input method (direct value setting) succeeded');
+        } catch (altError) {
+          logger.warning('Alternative input method also failed:', altError);
+
+          // Last resort - try direct value setting without events
+          try {
+            await element.evaluate((el, value) => {
+              if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+                el.value = value;
+              } else if (el instanceof HTMLElement && el.isContentEditable) {
+                el.textContent = value;
+              }
+            }, text);
+            logger.info('Last resort input method (direct value setting without events) succeeded');
+          } catch (directError) {
+            throw new Error(
+              `All input methods failed. Primary: ${inputError}, Alternative: ${altError}, Direct: ${directError}`,
+            );
+          }
+        }
       }
 
       // Wait for page stability after input
       await this.waitForPageAndFramesLoad();
     } catch (error) {
-      const errorMsg = `Failed to input text into element: ${elementNode}. Error: ${error instanceof Error ? error.message : String(error)}`;
+      const elementInfo = `tagName: ${elementNode.tagName}, xpath: ${elementNode.xpath}, selector: ${elementNode.enhancedCssSelectorForElement(this._config.includeDynamicAttributes)}`;
+      const errorMsg = `Failed to input text into element: ${elementInfo}. Error: ${error instanceof Error ? error.message : String(error)}`;
       logger.error(errorMsg);
       throw new Error(errorMsg);
     }
