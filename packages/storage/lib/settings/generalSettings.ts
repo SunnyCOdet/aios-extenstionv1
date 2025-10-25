@@ -50,10 +50,7 @@ export const generalSettingsStore: GeneralSettingsStorage = {
       useVision: true,
     };
 
-    // If useVision is true, displayHighlights must also be true
-    if (updatedSettings.useVision && !updatedSettings.displayHighlights) {
-      updatedSettings.displayHighlights = true;
-    }
+    // Allow displayHighlights to be controlled independently of useVision
 
     await storage.set(updatedSettings);
   },

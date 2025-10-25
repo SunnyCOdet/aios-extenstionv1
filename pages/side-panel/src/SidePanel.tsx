@@ -44,6 +44,7 @@ const SidePanel = () => {
   const [isProcessingSpeech, setIsProcessingSpeech] = useState(false);
   const [isReplaying, setIsReplaying] = useState(false);
   const [replayEnabled, setReplayEnabled] = useState(false);
+  const [displayHighlights, setDisplayHighlights] = useState(true);
   const [currentMode, setCurrentMode] = useState<SidebarMode>('agent');
   const [showModeDropdown, setShowModeDropdown] = useState(false);
   const [currentView, setCurrentView] = useState<SidebarView>('chat');
@@ -99,9 +100,21 @@ const SidePanel = () => {
     try {
       const settings = await generalSettingsStore.getSettings();
       setReplayEnabled(settings.replayHistoricalTasks);
+      setDisplayHighlights(settings.displayHighlights);
     } catch (error) {
       console.error('Error loading general settings:', error);
       setReplayEnabled(false);
+      setDisplayHighlights(true);
+    }
+  }, []);
+
+  // Handle updating display highlights setting
+  const handleDisplayHighlightsChange = useCallback(async (enabled: boolean) => {
+    try {
+      setDisplayHighlights(enabled);
+      await generalSettingsStore.updateSettings({ displayHighlights: enabled });
+    } catch (error) {
+      console.error('Error updating display highlights setting:', error);
     }
   }, []);
 
@@ -1161,7 +1174,44 @@ const SidePanel = () => {
       {currentView === 'settings' ? (
         <div className="flex-1 overflow-hidden">
           <div className="h-full overflow-y-auto p-4 scrollbar-gutter-stable">
-            <div className="min-h-full pb-8">
+            <div className="min-h-full pb-8 space-y-6">
+              {/* General Settings Section */}
+              <div
+                className={`rounded-lg border ${isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-blue-100 bg-white'} p-6 text-left shadow-sm`}>
+                <h2
+                  className={`mb-4 text-left text-xl font-semibold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                  General Settings
+                </h2>
+
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className={`text-base font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                        Show DOM Element Highlights
+                      </h3>
+                      <p className={`text-sm font-normal ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                        Toggle the display of DOM element highlights during automation
+                      </p>
+                    </div>
+                    <div className="relative inline-flex cursor-pointer items-center">
+                      <input
+                        id="displayHighlights"
+                        type="checkbox"
+                        checked={displayHighlights}
+                        onChange={e => handleDisplayHighlightsChange(e.target.checked)}
+                        className="peer sr-only"
+                      />
+                      <label
+                        htmlFor="displayHighlights"
+                        className={`peer h-6 w-11 rounded-full ${isDarkMode ? 'bg-slate-600' : 'bg-gray-200'} after:absolute after:left-[2px] after:top-[2px] after:size-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-blue-600 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300`}>
+                        <span className="sr-only">Show DOM Element Highlights</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Model Settings Section */}
               <ModelSettings isDarkMode={isDarkMode} />
             </div>
           </div>
