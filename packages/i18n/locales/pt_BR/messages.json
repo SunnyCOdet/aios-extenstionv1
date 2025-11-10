@@ -58,6 +58,12 @@
   "chat_buttons_stop": {
     "message": "Parar"
   },
+  "chat_buttons_pause": {
+    "message": "Pausar"
+  },
+  "chat_buttons_resume": {
+    "message": "Retomar"
+  },
   "chat_buttons_replay": {
     "message": "Reproduzir"
   },
@@ -516,6 +522,9 @@
   },
   "exec_task_pause": {
     "message": "Tarefa pausada"
+  },
+  "exec_task_resume": {
+    "message": "Tarefa retomada"
   },
   "exec_task_fail": {
     "message": "Tarefa falhou: \n\n$ERROR_MESSAGE$",

@@ -11,6 +11,9 @@ interface ChatInputProps {
   isProcessingSpeech?: boolean;
   disabled: boolean;
   showStopButton: boolean;
+  onPauseTask?: () => void;
+  onResumeTask?: () => void;
+  isTaskPaused?: boolean;
   setContent?: (setter: (text: string) => void) => void;
   isDarkMode?: boolean;
   // Historical session ID - if provided, shows replay button instead of send button
@@ -38,6 +41,9 @@ export default function ChatInput({
   isProcessingSpeech = false,
   disabled,
   showStopButton,
+  onPauseTask,
+  onResumeTask,
+  isTaskPaused = false,
   setContent,
   isDarkMode = false,
   historicalSessionId,
@@ -354,12 +360,39 @@ export default function ChatInput({
           </div>
 
           {showStopButton ? (
-            <button
-              type="button"
-              onClick={onStopTask}
-              className="bg-gradient-to-r from-red-500 to-red-600 text-white px-5 py-2 rounded-lg font-semibold hover:scale-105 transition-all duration-200">
-              {t('chat_buttons_stop')}
-            </button>
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={onStopTask}
+                className="bg-gradient-to-r from-red-500 to-red-600 text-white px-5 py-2 rounded-lg font-semibold hover:scale-105 transition-all duration-200">
+                {t('chat_buttons_stop')}
+              </button>
+              {isTaskPaused ? (
+                <button
+                  type="button"
+                  onClick={onResumeTask}
+                  disabled={!onResumeTask}
+                  aria-disabled={!onResumeTask}
+                  className={`bg-gradient-to-r from-emerald-500 to-emerald-600 text-white px-5 py-2 rounded-lg font-semibold transition-all duration-200 ${
+                    !onResumeTask ? 'cursor-not-allowed opacity-50' : 'hover:scale-105'
+                  }`}>
+                  <span className="mr-1">▶</span>
+                  {t('chat_buttons_resume')}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onPauseTask}
+                  disabled={!onPauseTask}
+                  aria-disabled={!onPauseTask}
+                  className={`bg-gradient-to-r from-yellow-500 to-yellow-600 text-white px-5 py-2 rounded-lg font-semibold transition-all duration-200 ${
+                    !onPauseTask ? 'cursor-not-allowed opacity-50' : 'hover:scale-105'
+                  }`}>
+                  <span className="mr-1">⏸</span>
+                  {t('chat_buttons_pause')}
+                </button>
+              )}
+            </div>
           ) : historicalSessionId ? (
             <button
               type="button"

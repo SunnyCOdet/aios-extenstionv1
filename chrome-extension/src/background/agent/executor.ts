@@ -337,11 +337,13 @@ export class Executor {
   }
 
   async resume(): Promise<void> {
-    this.context.resume();
+    await this.context.resume();
+    await this.context.emitEvent(Actors.SYSTEM, ExecutionState.TASK_RESUME, t('exec_task_resume'));
   }
 
   async pause(): Promise<void> {
-    this.context.pause();
+    await this.context.pause();
+    await this.context.emitEvent(Actors.SYSTEM, ExecutionState.TASK_PAUSE, t('exec_task_pause'));
   }
 
   async cleanup(): Promise<void> {

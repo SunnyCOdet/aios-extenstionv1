@@ -58,6 +58,12 @@
   "chat_buttons_stop": {
     "message": "Stop"
   },
+  "chat_buttons_pause": {
+    "message": "Pause"
+  },
+  "chat_buttons_resume": {
+    "message": "Resume"
+  },
   "chat_buttons_replay": {
     "message": "Replay"
   },
@@ -517,6 +523,9 @@
   },
   "exec_task_pause": {
     "message": "Task paused"
+  },
+  "exec_task_resume": {
+    "message": "Task resumed"
   },
   "exec_task_fail": {
     "message": "Task failed: \n\n$ERROR_MESSAGE$",

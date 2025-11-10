@@ -32,6 +32,7 @@ const SidePanel = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputEnabled, setInputEnabled] = useState(true);
   const [showStopButton, setShowStopButton] = useState(false);
+  const [isTaskPaused, setIsTaskPaused] = useState(false);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [chatSessions, setChatSessions] = useState<Array<{ id: string; title: string; createdAt: number }>>([]);
@@ -217,18 +218,21 @@ const SidePanel = () => {
             case ExecutionState.TASK_START:
               // Reset historical session flag when a new task starts
               setIsHistoricalSession(false);
+              setIsTaskPaused(false);
               break;
             case ExecutionState.TASK_OK:
               setIsFollowUpMode(true);
               setInputEnabled(true);
               setShowStopButton(false);
               setIsReplaying(false);
+              setIsTaskPaused(false);
               break;
             case ExecutionState.TASK_FAIL:
               setIsFollowUpMode(true);
               setInputEnabled(true);
               setShowStopButton(false);
               setIsReplaying(false);
+              setIsTaskPaused(false);
               skip = false;
               break;
             case ExecutionState.TASK_CANCEL:
@@ -236,11 +240,16 @@ const SidePanel = () => {
               setInputEnabled(true);
               setShowStopButton(false);
               setIsReplaying(false);
+              setIsTaskPaused(false);
               skip = false;
               break;
             case ExecutionState.TASK_PAUSE:
+              setIsTaskPaused(true);
+              skip = false;
               break;
             case ExecutionState.TASK_RESUME:
+              setIsTaskPaused(false);
+              skip = false;
               break;
             default:
               console.error('Invalid task state', state);
@@ -386,6 +395,7 @@ const SidePanel = () => {
       portRef.current.disconnect();
       portRef.current = null;
     }
+    setIsTaskPaused(false);
   }, []);
 
   // Setup connection management
@@ -538,6 +548,7 @@ const SidePanel = () => {
       // Send replay command to background
       setInputEnabled(false);
       setShowStopButton(true);
+      setIsTaskPaused(false);
 
       // Reset follow-up mode and historical session flags
       setIsFollowUpMode(false);
@@ -672,6 +683,7 @@ const SidePanel = () => {
 
       setInputEnabled(false);
       setShowStopButton(true);
+      setIsTaskPaused(false);
 
       // Create a new chat session for this task if not in follow-up mode
       if (!isFollowUpMode) {
@@ -734,6 +746,7 @@ const SidePanel = () => {
       });
       setInputEnabled(true);
       setShowStopButton(false);
+      setIsTaskPaused(false);
       stopConnection();
     }
   };
@@ -754,7 +767,68 @@ const SidePanel = () => {
     }
     setInputEnabled(true);
     setShowStopButton(false);
+    setIsTaskPaused(false);
   };
+
+  const handlePauseTask = useCallback(() => {
+    try {
+      if (!portRef.current) {
+        setupConnection();
+      }
+
+      if (!portRef.current) {
+        appendMessage({
+          actor: Actors.SYSTEM,
+          content: t('bg_errors_noRunningTask'),
+          timestamp: Date.now(),
+        });
+        return;
+      }
+
+      portRef.current.postMessage({
+        type: 'pause_task',
+      });
+      setIsTaskPaused(true);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      console.error('pause_task error', errorMessage);
+      appendMessage({
+        actor: Actors.SYSTEM,
+        content: errorMessage,
+        timestamp: Date.now(),
+      });
+    }
+  }, [appendMessage, setupConnection]);
+
+  const handleResumeTask = useCallback(() => {
+    try {
+      if (!portRef.current) {
+        setupConnection();
+      }
+
+      if (!portRef.current) {
+        appendMessage({
+          actor: Actors.SYSTEM,
+          content: t('bg_cmd_resumeTask_noTask'),
+          timestamp: Date.now(),
+        });
+        return;
+      }
+
+      portRef.current.postMessage({
+        type: 'resume_task',
+      });
+      setIsTaskPaused(false);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      console.error('resume_task error', errorMessage);
+      appendMessage({
+        actor: Actors.SYSTEM,
+        content: errorMessage,
+        timestamp: Date.now(),
+      });
+    }
+  }, [appendMessage, setupConnection]);
 
   const handleNewChat = () => {
     // Clear messages and start a new chat
@@ -763,6 +837,7 @@ const SidePanel = () => {
     sessionIdRef.current = null;
     setInputEnabled(true);
     setShowStopButton(false);
+    setIsTaskPaused(false);
     setIsFollowUpMode(false);
     setIsHistoricalSession(false);
 
@@ -1320,6 +1395,9 @@ const SidePanel = () => {
                     isProcessingSpeech={isProcessingSpeech}
                     disabled={!inputEnabled || isHistoricalSession}
                     showStopButton={showStopButton}
+                    onPauseTask={handlePauseTask}
+                    onResumeTask={handleResumeTask}
+                    isTaskPaused={isTaskPaused}
                     setContent={setter => {
                       setInputTextRef.current = setter;
                     }}
