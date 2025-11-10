@@ -1,6 +1,3 @@
-// Import Manifest V3 compatible PostHog - no-external bundle to avoid CSP issues
-import * as PostHog from 'posthog-js/dist/module.no-external';
-const posthog = PostHog.default || PostHog;
 import { analyticsSettingsStore } from '@extension/storage';
 import { createLogger } from '../log';
 
@@ -55,51 +52,17 @@ export class AnalyticsService {
       const settings = await analyticsSettingsStore.getSettings();
       this.enabled = settings.enabled;
 
-      if (!this.enabled) {
+      this.initialized = true;
+
+      if (this.enabled) {
+        logger.info('Analytics enabled, but PostHog has been removed so no telemetry will be sent.');
+      } else {
         logger.info('Analytics disabled by user');
-        return;
       }
-
-      // Initialize PostHog with Manifest V3 compatible settings
-      const apiKey = import.meta.env.VITE_POSTHOG_API_KEY;
-
-      if (!apiKey) {
-        logger.info('PostHog API key not configured, analytics disabled');
-        this.enabled = false;
-        return;
-      }
-
-      posthog.init(apiKey, {
-        api_host: 'https://app.posthog.com',
-        // Manifest V3 compatibility settings
-        autocapture: false, // No automatic event capture
-        capture_pageview: false, // No page views
-        capture_pageleave: false, // No page leave events
-        disable_session_recording: true, // No recordings to avoid CSP issues
-        mask_all_text: true, // Extra safety
-        mask_all_element_attributes: true,
-        opt_out_capturing_by_default: false, // Enabled by default per requirements
-        loaded: () => {
-          this.initialized = true;
-          logger.info('Analytics initialized');
-        },
-        bootstrap: {
-          distinctID: settings.anonymousUserId,
-        },
-        // Disable features that may cause Chrome Web Store rejections
-        session_recording: {
-          maskAllInputs: true,
-          maskInputOptions: {
-            password: true,
-            email: true,
-          },
-        },
-        // Ensure no remote code execution
-        advanced_disable_decide: true,
-      });
     } catch (error) {
       logger.error('Failed to initialize analytics:', error);
       this.enabled = false;
+      this.initialized = false;
     }
   }
 
@@ -110,14 +73,9 @@ export class AnalyticsService {
       const startTime = Date.now();
       this.taskMetrics.set(taskId, { taskId, startTime });
 
-      posthog.capture('task_started', {
-        task_id: taskId,
-        timestamp: startTime,
-      });
-
-      logger.debug('Tracked task start:', taskId);
+      logger.debug('Analytics event suppressed (task_started):', taskId);
     } catch (error) {
-      logger.error('Failed to track task start:', error);
+      logger.error('Failed to handle task start analytics:', error);
     }
   }
 
@@ -129,18 +87,12 @@ export class AnalyticsService {
       const endTime = Date.now();
       const duration = metrics ? endTime - metrics.startTime : 0;
 
-      posthog.capture('task_completed', {
-        task_id: taskId,
-        duration_ms: duration,
-        timestamp: endTime,
-      });
-
       // Clean up metrics
       this.taskMetrics.delete(taskId);
 
-      logger.debug('Tracked task completion:', taskId, `${duration}ms`);
+      logger.debug('Analytics event suppressed (task_completed):', taskId, `${duration}ms`);
     } catch (error) {
-      logger.error('Failed to track task completion:', error);
+      logger.error('Failed to handle task completion analytics:', error);
     }
   }
 
@@ -152,19 +104,12 @@ export class AnalyticsService {
       const endTime = Date.now();
       const duration = metrics ? endTime - metrics.startTime : 0;
 
-      posthog.capture('task_failed', {
-        task_id: taskId,
-        duration_ms: duration,
-        error_category: errorCategory,
-        timestamp: endTime,
-      });
-
       // Clean up metrics
       this.taskMetrics.delete(taskId);
 
-      logger.debug('Tracked task failure:', taskId, errorCategory, `${duration}ms`);
+      logger.debug('Analytics event suppressed (task_failed):', taskId, errorCategory, `${duration}ms`);
     } catch (error) {
-      logger.error('Failed to track task failure:', error);
+      logger.error('Failed to handle task failure analytics:', error);
     }
   }
 
@@ -176,18 +121,12 @@ export class AnalyticsService {
       const endTime = Date.now();
       const duration = metrics ? endTime - metrics.startTime : 0;
 
-      posthog.capture('task_cancelled', {
-        task_id: taskId,
-        duration_ms: duration,
-        timestamp: endTime,
-      });
-
       // Clean up metrics
       this.taskMetrics.delete(taskId);
 
-      logger.debug('Tracked task cancellation:', taskId, `${duration}ms`);
+      logger.debug('Analytics event suppressed (task_cancelled):', taskId, `${duration}ms`);
     } catch (error) {
-      logger.error('Failed to track task cancellation:', error);
+      logger.error('Failed to handle task cancellation analytics:', error);
     }
   }
 
@@ -203,12 +142,7 @@ export class AnalyticsService {
         return;
       }
 
-      posthog.capture('domain_visited', {
-        domain,
-        timestamp: Date.now(),
-      });
-
-      logger.debug('Tracked domain visit:', domain);
+      logger.debug('Analytics event suppressed (domain_visited):', domain);
     } catch (error) {
       // Silently fail if URL parsing fails
       logger.debug('Failed to track domain visit:', error);
@@ -251,15 +185,16 @@ export class AnalyticsService {
       const wasEnabled = this.enabled;
       this.enabled = settings.enabled;
 
-      if (!wasEnabled && this.enabled) {
-        // Re-initialize if analytics was disabled and now enabled
+      if (!this.initialized) {
         await this.init();
+        return;
+      }
+
+      if (!wasEnabled && this.enabled) {
+        logger.info('Analytics enabled, but telemetry is disabled because PostHog has been removed.');
       } else if (wasEnabled && !this.enabled) {
-        // Opt out if analytics was enabled and now disabled
-        if (this.initialized) {
-          posthog.opt_out_capturing();
-          logger.info('Analytics opted out');
-        }
+        this.taskMetrics.clear();
+        logger.info('Analytics disabled by user');
       }
     } catch (error) {
       logger.error('Failed to update analytics settings:', error);
