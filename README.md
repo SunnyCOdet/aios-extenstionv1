@@ -50,8 +50,8 @@ AIOS Browser is an open-source Chrome extension that brings intelligent automati
 
 2. **Clone the Repository**
    ```bash
-   git clone https://github.com/aios/aios.git
-   cd aios
+   git clone https://github.com/SunnyCOdet/aios-extenstionv1.git
+   cd aios-extenstionv1
    ```
 
 3. **Install Dependencies**
